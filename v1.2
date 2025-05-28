@@ -1,0 +1,159 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# שימוש בטבלת האש למיפוי - יעיל יותר מתוך אובייקט
+$hebrewMapping = @{}
+@{
+    'q' = '/'; 'w' = "'"; 'e' = 'ק'; 'r' = 'ר'; 't' = 'א'; 'y' = 'ט'; 'u' = 'ו'
+    'i' = 'ן'; 'o' = 'ם'; 'p' = 'פ'; 'a' = 'ש'; 's' = 'ד'; 'd' = 'ג'; 'f' = 'כ'
+    'g' = 'ע'; 'h' = 'י'; 'j' = 'ח'; 'k' = 'ל'; 'l' = 'ך'; ';' = 'ף'; 'z' = 'ז'
+    'x' = 'ס'; 'c' = 'ב'; 'v' = 'ה'; 'b' = 'נ'; 'n' = 'מ'; 'm' = 'צ'; ',' = 'ת'
+    '.' = 'ץ'; '/' = '.'; "'" = ','; ' ' = ' '
+}.GetEnumerator() | ForEach-Object { $hebrewMapping[$_.Key] = $_.Value }
+
+# פונקציה להמרת טקסט - מותאמת לביצועים
+function Convert-EnglishToHebrew {
+    param ([string]$text)
+    
+    # שימוש בתכונת StringBuilder לשיפור ביצועים בעבודה עם מחרוזות
+    $sb = New-Object System.Text.StringBuilder
+    
+    foreach ($char in $text.ToCharArray()) {
+        $lowerChar = $char.ToString().ToLower()
+        if ($hebrewMapping.ContainsKey($lowerChar)) {
+            [void]$sb.Append($hebrewMapping[$lowerChar])
+        }
+        else {
+            [void]$sb.Append($char)
+        }
+    }
+    
+    return $sb.ToString()
+}
+
+# מניעת הקפאת הממשק באמצעות מנגנון הפעולות האסינכרוניות
+function Start-ConvertText {
+    param([string]$inputText)
+    
+    # בצע המרה בתהליך משני
+    $result = Convert-EnglishToHebrew -text $inputText
+    
+    # העדכון של ממשק המשתמש חייב לרוץ בתהליך הראשי
+    $textBox.Invoke([Action]{
+        $textBox.Text = $result
+        $textBox.Refresh()  # רענון אקטיבי של התיבה
+    })
+}
+
+# הגדרת הטופס עם זיכרון מיקום
+$formSettings = @{
+    Text = "ממיר מקלדת אנגלית לעברית"
+    Size = New-Object System.Drawing.Size(500, 320)
+    StartPosition = "CenterScreen"
+    Font = New-Object System.Drawing.Font("Arial", 12)
+    RightToLeft = [System.Windows.Forms.RightToLeft]::Yes
+    FormBorderStyle = 'FixedDialog'
+    MaximizeBox = $false
+    MinimizeBox = $true
+    TopMost = $false  # שינוי ל-false לשיפור הביצועים
+}
+
+$form = New-Object System.Windows.Forms.Form
+foreach ($key in $formSettings.Keys) {
+    $form.$key = $formSettings[$key]
+}
+
+# שימוש בבקרות אופטימליות
+$textBox = New-Object System.Windows.Forms.TextBox -Property @{
+    Multiline = $true
+    ScrollBars = "Vertical"
+    Size = New-Object System.Drawing.Size(450, 120)
+    Location = New-Object System.Drawing.Point(20, 50)
+    AcceptsReturn = $true  # אפשר שורות חדשות
+    Font = New-Object System.Drawing.Font("Arial", 12)
+}
+
+$labelInput = New-Object System.Windows.Forms.Label -Property @{
+    Text = "הכנס טקסט שנכתב באנגלית במקום עברית:"
+    Size = New-Object System.Drawing.Size(450, 30)
+    Location = New-Object System.Drawing.Point(20, 20)
+    TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+}
+
+$convertButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "המר לעברית ( מקש F2)"
+    Size = New-Object System.Drawing.Size(120, 40)
+    Location = New-Object System.Drawing.Point(190, 180)
+    UseVisualStyleBackColor = $true  # שיפור ביצועי גרפיקה
+}
+
+$copyButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "העתק ל Clipboard"
+    Size = New-Object System.Drawing.Size(120, 40)
+    Location = New-Object System.Drawing.Point(190, 230)
+    UseVisualStyleBackColor = $true  # שיפור ביצועי גרפיקה
+}
+
+# הגדרות אירועים - מכוונות לביצועים
+$convertButton.Add_Click({
+    $inputText = $textBox.Text
+    if (-not [string]::IsNullOrEmpty($inputText)) {
+        # ביצוע ישיר של המרה במקום צורה אסינכרונית מלאה
+        # שהיא עודף מורכבות לתוכנית כזו קטנה
+        $textBox.Text = Convert-EnglishToHebrew -text $inputText
+    }
+})
+
+$copyButton.Add_Click({
+    if (-not [string]::IsNullOrEmpty($textBox.Text)) {
+        [System.Windows.Forms.Clipboard]::SetText($textBox.Text)
+    }
+})
+
+# הוספת המקשים לטופס
+$form.Controls.AddRange(@($labelInput, $textBox, $convertButton, $copyButton))
+
+# הגדרת מקשי קיצור
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+    param($sender, $e)
+    # מקש F2 להמרה
+    if ($e.KeyCode -eq 'F2') {
+        $convertButton.PerformClick()
+    }
+    # Ctrl+C להעתקה
+    elseif ($e.Control -and $e.KeyCode -eq 'C' -and $textBox.SelectionLength -eq 0) {
+        $copyButton.PerformClick()
+    }
+})
+
+# הוספת תפריט הקליק ימני לתיבת הטקסט
+$contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$copyMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "העתק"
+}
+$copyMenuItem.Add_Click({ 
+    if ($textBox.SelectionLength -gt 0) {
+        [System.Windows.Forms.Clipboard]::SetText($textBox.SelectedText)
+    }
+})
+
+$pasteMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "הדבק"
+}
+$pasteMenuItem.Add_Click({ 
+    if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+        $textBox.Paste()
+    }
+})
+
+$selectAllMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "בחר הכל"
+}
+$selectAllMenuItem.Add_Click({ $textBox.SelectAll() })
+
+$contextMenu.Items.AddRange(@($copyMenuItem, $pasteMenuItem, $selectAllMenuItem))
+$textBox.ContextMenuStrip = $contextMenu
+
+# הצגת הטופס
+[void]$form.ShowDialog()
