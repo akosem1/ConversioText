@@ -1,0 +1,413 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# יצירת מיפוי דו-כיווני
+$hebrewMapping = @{}
+$englishMapping = @{}
+
+@{
+    'q' = '/'; 'w' = "'"; 'e' = 'ק'; 'r' = 'ר'; 't' = 'א'; 'y' = 'ט'; 'u' = 'ו'
+    'i' = 'ן'; 'o' = 'ם'; 'p' = 'פ'; 'a' = 'ש'; 's' = 'ד'; 'd' = 'ג'; 'f' = 'כ'
+    'g' = 'ע'; 'h' = 'י'; 'j' = 'ח'; 'k' = 'ל'; 'l' = 'ך'; ';' = 'ף'; 'z' = 'ז'
+    'x' = 'ס'; 'c' = 'ב'; 'v' = 'ה'; 'b' = 'נ'; 'n' = 'מ'; 'm' = 'צ'; ',' = 'ת'
+    '.' = 'ץ'; '/' = '.'; "'" = ','; ' ' = ' '
+}.GetEnumerator() | ForEach-Object { 
+    $hebrewMapping[$_.Key] = $_.Value 
+    $englishMapping[$_.Value] = $_.Key
+}
+
+# משתנים גלובליים לביטול פעולות
+$textHistory = @()
+$currentHistoryIndex = -1
+
+# פונקציה להמרת טקסט - כיוון אנגלית לעברית
+function Convert-EnglishToHebrew {
+    param ([string]$text)
+    
+    $sb = New-Object System.Text.StringBuilder
+    
+    foreach ($char in $text.ToCharArray()) {
+        $lowerChar = $char.ToString().ToLower()
+        if ($hebrewMapping.ContainsKey($lowerChar)) {
+            [void]$sb.Append($hebrewMapping[$lowerChar])
+        }
+        else {
+            [void]$sb.Append($char)
+        }
+    }
+    
+    return $sb.ToString()
+}
+
+# פונקציה להמרת טקסט - כיוון עברית לאנגלית
+function Convert-HebrewToEnglish {
+    param ([string]$text)
+    
+    $sb = New-Object System.Text.StringBuilder
+    
+    foreach ($char in $text.ToCharArray()) {
+        $charStr = $char.ToString()
+        if ($englishMapping.ContainsKey($charStr)) {
+            [void]$sb.Append($englishMapping[$charStr])
+        }
+        else {
+            [void]$sb.Append($char)
+        }
+    }
+    
+    return $sb.ToString()
+}
+
+# פונקציה לזיהוי אוטומטי של כיוון הטקסט
+function Get-TextDirection {
+    param ([string]$text)
+    
+    $hebrewCount = 0
+    $englishCount = 0
+    
+    foreach ($char in $text.ToCharArray()) {
+        $charStr = $char.ToString()
+        if ($hebrewMapping.ContainsValue($charStr)) {
+            $hebrewCount++
+        }
+        elseif ($hebrewMapping.ContainsKey($charStr.ToLower()) -and $charStr -match '[a-zA-Z]') {
+            $englishCount++
+        }
+    }
+    
+    if ($hebrewCount -gt $englishCount) {
+        return "HebrewToEnglish"
+    }
+    else {
+        return "EnglishToHebrew"
+    }
+}
+
+# פונקציה לשמירת היסטוריה
+function Save-TextToHistory {
+    param ([string]$text)
+    
+    if ($text -ne $textHistory[$currentHistoryIndex]) {
+        # הסרת כל ההיסטוריה שאחרי הנקודה הנוכחית
+        if ($currentHistoryIndex -lt $textHistory.Count - 1) {
+            $textHistory = $textHistory[0..$currentHistoryIndex]
+        }
+        
+        # הוספת הטקסט החדש
+        $textHistory += $text
+        $currentHistoryIndex = $textHistory.Count - 1
+        
+        # שמירה על מקסימום 50 פעולות בהיסטוריה
+        if ($textHistory.Count -gt 50) {
+            $textHistory = $textHistory[1..49]
+            $currentHistoryIndex = $textHistory.Count - 1
+        }
+    }
+}
+
+# פונקציה לביטול פעולה
+function Undo-LastAction {
+    if ($currentHistoryIndex -gt 0) {
+        $currentHistoryIndex--
+        $textBox.Text = $textHistory[$currentHistoryIndex]
+        Update-CharCounter
+    }
+}
+
+# פונקציה לעדכון מונה התווים
+function Update-CharCounter {
+    $charCount = $textBox.Text.Length
+    $wordCount = ($textBox.Text -split '\s+' | Where-Object { $_ -ne '' }).Count
+    $charCounterLabel.Text = "תווים: $charCount | מילים: $wordCount"
+}
+
+# פונקציה להמרה עם זיהוי אוטומטי
+function Start-SmartConvert {
+    $inputText = $textBox.Text
+    if (-not [string]::IsNullOrEmpty($inputText)) {
+        # שמירה בהיסטוריה לפני השינוי
+        Save-TextToHistory -text $inputText
+        
+        $direction = Get-TextDirection -text $inputText
+        
+        if ($direction -eq "HebrewToEnglish") {
+            $result = Convert-HebrewToEnglish -text $inputText
+            $directionLabel.Text = "כיוון המרה: עברית → אנגלית"
+        }
+        else {
+            $result = Convert-EnglishToHebrew -text $inputText
+            $directionLabel.Text = "כיוון המרה: אנגלית → עברית"
+        }
+        
+        $textBox.Text = $result
+        Update-CharCounter
+    }
+}
+
+# יצירת הטופס
+$formSettings = @{
+    Text = "ממיר מקלדת עברית-אנגלית מתקדם"
+    Size = New-Object System.Drawing.Size(520, 450)
+    StartPosition = "CenterScreen"
+    Font = New-Object System.Drawing.Font("Arial", 10)
+    RightToLeft = [System.Windows.Forms.RightToLeft]::Yes
+    FormBorderStyle = 'FixedDialog'
+    MaximizeBox = $false
+    MinimizeBox = $true
+    TopMost = $false
+}
+
+$form = New-Object System.Windows.Forms.Form
+foreach ($key in $formSettings.Keys) {
+    $form.$key = $formSettings[$key]
+}
+
+# תווית הוראות
+$instructionLabel = New-Object System.Windows.Forms.Label -Property @{
+    Text = "הכנס טקסט - המערכת תזהה אוטומטי את הכיוון ותמיר בהתאם"
+    Size = New-Object System.Drawing.Size(470, 25)
+    Location = New-Object System.Drawing.Point(20, 15)
+    TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    Font = New-Object System.Drawing.Font("Arial", 10, [System.Drawing.FontStyle]::Bold)
+}
+
+# תיבת הטקסט הראשית
+$textBox = New-Object System.Windows.Forms.TextBox -Property @{
+    Multiline = $true
+    ScrollBars = "Vertical"
+    Size = New-Object System.Drawing.Size(470, 150)
+    Location = New-Object System.Drawing.Point(20, 45)
+    AcceptsReturn = $true
+    Font = New-Object System.Drawing.Font("Arial", 12)
+}
+
+# מונה תווים
+$charCounterLabel = New-Object System.Windows.Forms.Label -Property @{
+    Text = "תווים: 0 | מילים: 0"
+    Size = New-Object System.Drawing.Size(200, 20)
+    Location = New-Object System.Drawing.Point(20, 205)
+    TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    Font = New-Object System.Drawing.Font("Arial", 9)
+    ForeColor = [System.Drawing.Color]::DimGray
+}
+
+# תווית כיוון המרה
+$directionLabel = New-Object System.Windows.Forms.Label -Property @{
+    Text = "כיוון המרה: ממתין לטקסט..."
+    Size = New-Object System.Drawing.Size(250, 20)
+    Location = New-Object System.Drawing.Point(240, 205)
+    TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    Font = New-Object System.Drawing.Font("Arial", 9)
+    ForeColor = [System.Drawing.Color]::Blue
+}
+
+# כפתורי פעולה
+$convertButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "המר אוטומטי (Ctrl+Enter)"
+    Size = New-Object System.Drawing.Size(150, 35)
+    Location = New-Object System.Drawing.Point(330, 240)
+    UseVisualStyleBackColor = $true
+    Font = New-Object System.Drawing.Font("Arial", 9)
+}
+
+$englishToHebrewButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "אנגלית → עברית (F1)"
+    Size = New-Object System.Drawing.Size(140, 35)
+    Location = New-Object System.Drawing.Point(180, 240)
+    UseVisualStyleBackColor = $true
+    Font = New-Object System.Drawing.Font("Arial", 9)
+}
+
+$hebrewToEnglishButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "עברית → אנגלית (F2)"
+    Size = New-Object System.Drawing.Size(140, 35)
+    Location = New-Object System.Drawing.Point(30, 240)
+    UseVisualStyleBackColor = $true
+    Font = New-Object System.Drawing.Font("Arial", 9)
+}
+
+$copyButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "העתק (Ctrl+C)"
+    Size = New-Object System.Drawing.Size(120, 35)
+    Location = New-Object System.Drawing.Point(360, 290)
+    UseVisualStyleBackColor = $true
+    Font = New-Object System.Drawing.Font("Arial", 9)
+}
+
+$clearButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "נקה (Esc)"
+    Size = New-Object System.Drawing.Size(100, 35)
+    Location = New-Object System.Drawing.Point(250, 290)
+    UseVisualStyleBackColor = $true
+    Font = New-Object System.Drawing.Font("Arial", 9)
+}
+
+$undoButton = New-Object System.Windows.Forms.Button -Property @{
+    Text = "בטל (Ctrl+Z)"
+    Size = New-Object System.Drawing.Size(110, 35)
+    Location = New-Object System.Drawing.Point(130, 290)
+    UseVisualStyleBackColor = $true
+    Font = New-Object System.Drawing.Font("Arial", 9)
+}
+
+# תווית מקשי קיצור
+$shortcutsLabel = New-Object System.Windows.Forms.Label -Property @{
+    Text = "מקשי קיצור: Ctrl+Enter=המרה | Esc=ניקוי | Ctrl+Z=ביטול | F1/F2=כיוון מוגדר"
+    Size = New-Object System.Drawing.Size(470, 40)
+    Location = New-Object System.Drawing.Point(20, 340)
+    TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    Font = New-Object System.Drawing.Font("Arial", 8)
+    ForeColor = [System.Drawing.Color]::DarkGreen
+}
+
+# אירועי הכפתורים
+$convertButton.Add_Click({ Start-SmartConvert })
+
+$englishToHebrewButton.Add_Click({
+    $inputText = $textBox.Text
+    if (-not [string]::IsNullOrEmpty($inputText)) {
+        Save-TextToHistory -text $inputText
+        $textBox.Text = Convert-EnglishToHebrew -text $inputText
+        $directionLabel.Text = "כיוון המרה: אנגלית → עברית (כפוי)"
+        Update-CharCounter
+    }
+})
+
+$hebrewToEnglishButton.Add_Click({
+    $inputText = $textBox.Text
+    if (-not [string]::IsNullOrEmpty($inputText)) {
+        Save-TextToHistory -text $inputText
+        $textBox.Text = Convert-HebrewToEnglish -text $inputText
+        $directionLabel.Text = "כיוון המרה: עברית → אנגלית (כפוי)"
+        Update-CharCounter
+    }
+})
+
+$copyButton.Add_Click({
+    if (-not [string]::IsNullOrEmpty($textBox.Text)) {
+        [System.Windows.Forms.Clipboard]::SetText($textBox.Text)
+        $directionLabel.Text = "הועתק ללוח!"
+        # איפוס ההודעה אחרי 2 שניות
+        $timer = New-Object System.Windows.Forms.Timer
+        $timer.Interval = 2000
+        $timer.Add_Tick({
+            $directionLabel.Text = "כיוון המרה: ממתין לטקסט..."
+            $timer.Stop()
+            $timer.Dispose()
+        })
+        $timer.Start()
+    }
+})
+
+$clearButton.Add_Click({
+    if (-not [string]::IsNullOrEmpty($textBox.Text)) {
+        Save-TextToHistory -text $textBox.Text
+    }
+    $textBox.Clear()
+    Update-CharCounter
+    $directionLabel.Text = "כיוון המרה: ממתין לטקסט..."
+})
+
+$undoButton.Add_Click({ Undo-LastAction })
+
+# אירוע עדכון מונה תווים
+$textBox.Add_TextChanged({ Update-CharCounter })
+
+# הוספת כל הבקרות לטופס
+$form.Controls.AddRange(@(
+    $instructionLabel, $textBox, $charCounterLabel, $directionLabel,
+    $convertButton, $englishToHebrewButton, $hebrewToEnglishButton,
+    $copyButton, $clearButton, $undoButton, $shortcutsLabel
+))
+
+# מקשי קיצור מתקדמים
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+    param($sender, $e)
+    
+    # Ctrl+Enter להמרה אוטומטית
+    if ($e.Control -and $e.KeyCode -eq 'Return') {
+        $convertButton.PerformClick()
+        $e.Handled = $true
+    }
+    # Escape לניקוי
+    elseif ($e.KeyCode -eq 'Escape') {
+        $clearButton.PerformClick()
+        $e.Handled = $true
+    }
+    # Ctrl+Z לביטול
+    elseif ($e.Control -and $e.KeyCode -eq 'Z') {
+        $undoButton.PerformClick()
+        $e.Handled = $true
+    }
+    # F1 - אנגלית לעברית
+    elseif ($e.KeyCode -eq 'F1') {
+        $englishToHebrewButton.PerformClick()
+        $e.Handled = $true
+    }
+    # F2 - עברית לאנגלית
+    elseif ($e.KeyCode -eq 'F2') {
+        $hebrewToEnglishButton.PerformClick()
+        $e.Handled = $true
+    }
+    # Ctrl+C להעתקה כשאין טקסט נבחר
+    elseif ($e.Control -and $e.KeyCode -eq 'C' -and $textBox.SelectionLength -eq 0) {
+        $copyButton.PerformClick()
+        $e.Handled = $true
+    }
+})
+
+# תפריט קליק ימני משופר
+$contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+
+$copyMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "העתק"
+    ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::C
+}
+$copyMenuItem.Add_Click({ 
+    if ($textBox.SelectionLength -gt 0) {
+        [System.Windows.Forms.Clipboard]::SetText($textBox.SelectedText)
+    } else {
+        $copyButton.PerformClick()
+    }
+})
+
+$pasteMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "הדבק"
+    ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::V
+}
+$pasteMenuItem.Add_Click({ 
+    if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+        $textBox.Paste()
+    }
+})
+
+$selectAllMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "בחר הכל"
+    ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::A
+}
+$selectAllMenuItem.Add_Click({ $textBox.SelectAll() })
+
+$separator1 = New-Object System.Windows.Forms.ToolStripSeparator
+
+$convertMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "המר אוטומטי"
+    ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::Return
+}
+$convertMenuItem.Add_Click({ $convertButton.PerformClick() })
+
+$undoMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem -Property @{
+    Text = "בטל פעולה"
+    ShortcutKeys = [System.Windows.Forms.Keys]::Control -bor [System.Windows.Forms.Keys]::Z
+}
+$undoMenuItem.Add_Click({ $undoButton.PerformClick() })
+
+$contextMenu.Items.AddRange(@($copyMenuItem, $pasteMenuItem, $selectAllMenuItem, $separator1, $convertMenuItem, $undoMenuItem))
+$textBox.ContextMenuStrip = $contextMenu
+
+# אתחול
+Save-TextToHistory -text ""
+Update-CharCounter
+
+# הצגת הטופס
+[void]$form.ShowDialog()
