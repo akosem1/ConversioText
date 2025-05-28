@@ -1,0 +1,117 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# יצירת המילון להמרה מאותיות באנגלית לעברית
+$hebrewMapping = @{
+    'q' = '/'
+    'w' = "'"
+    'e' = 'ק'
+    'r' = 'ר'
+    't' = 'א'
+    'y' = 'ט'
+    'u' = 'ו'
+    'i' = 'ן'
+    'o' = 'ם'
+    'p' = 'פ'
+    'a' = 'ש'
+    's' = 'ד'
+    'd' = 'ג'
+    'f' = 'כ'
+    'g' = 'ע'
+    'h' = 'י'
+    'j' = 'ח'
+    'k' = 'ל'
+    'l' = 'ך'
+    ';' = 'ף'
+    'z' = 'ז'
+    'x' = 'ס'
+    'c' = 'ב'
+    'v' = 'ה'
+    'b' = 'נ'
+    'n' = 'מ'
+    'm' = 'צ'
+    ',' = 'ת'
+    '.' = 'ץ'
+    '/' = '.'
+    "'" = ','
+    ' ' = ' '  # שמירה על רווחים
+}
+
+# פונקציה להמרת טקסט מאנגלית לעברית
+function Convert-EnglishToHebrew {
+    param (
+        [string]$text
+    )
+    
+    $result = ""
+    foreach ($char in $text.ToCharArray()) {
+        $lowerChar = $char.ToString().ToLower()
+        if ($hebrewMapping.ContainsKey($lowerChar)) {
+            $result += $hebrewMapping[$lowerChar]
+        } else {
+            $result += $char  # אם אין התאמה, השאר את התו המקורי
+        }
+    }
+    
+    # המרת הטקסט מימין לשמאל (תכונה של עברית)
+    return $result
+}
+
+# יצירת הטופס הראשי
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "ממיר מקלדת אנגלית לעברית"
+$form.Size = New-Object System.Drawing.Size(500, 320)
+$form.StartPosition = "CenterScreen"
+$form.Font = New-Object System.Drawing.Font("Arial", 12)
+$form.RightToLeft = [System.Windows.Forms.RightToLeft]::Yes
+    $form.StartPosition = "CenterParent"
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $true
+    $form.TopMost = $true
+
+# יצירת תיבת טקסט להזנה והצגת התוצאה
+$textBox = New-Object System.Windows.Forms.TextBox
+$textBox.Multiline = $true
+$textBox.ScrollBars = "Vertical"
+$textBox.Size = New-Object System.Drawing.Size(450, 120)
+$textBox.Location = New-Object System.Drawing.Point(20, 50)
+
+# יצירת תווית הסבר
+$labelInput = New-Object System.Windows.Forms.Label
+$labelInput.Text = "הכנס טקסט שנכתב באנגלית במקום עברית:"
+$labelInput.Size = New-Object System.Drawing.Size(450, 30)
+$labelInput.Location = New-Object System.Drawing.Point(20, 20)
+
+# יצירת כפתור המרה
+$convertButton = New-Object System.Windows.Forms.Button
+$convertButton.Text = "המר לעברית"
+$convertButton.Size = New-Object System.Drawing.Size(120, 40)
+$convertButton.Location = New-Object System.Drawing.Point(190, 180)
+
+# הוספת אירוע לחיצה לכפתור
+$convertButton.Add_Click({
+    $inputText = $textBox.Text
+    $textBox.Text = Convert-EnglishToHebrew -text $inputText
+})
+
+# הוספת הרכיבים לטופס
+$form.Controls.Add($labelInput)
+$form.Controls.Add($textBox)
+$form.Controls.Add($convertButton)
+
+# כפתור להעתקת הטקסט המומר ללוח
+$copyButton = New-Object System.Windows.Forms.Button
+$copyButton.Text = "העתק ל Clipboard "
+$copyButton.Size = New-Object System.Drawing.Size(120, 40)
+$copyButton.Location = New-Object System.Drawing.Point(190, 230)
+$copyButton.Add_Click({
+    if ($textBox.Text) {
+        [System.Windows.Forms.Clipboard]::SetText($textBox.Text)
+    ##    [System.Windows.Forms.MessageBox]::Show("הטקסט הועתק בהצלחה!", "הודעה", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    }
+})
+$form.Controls.Add($copyButton)
+
+# הצגת הטופס
+$form.ShowDialog()
